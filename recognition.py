@@ -1165,17 +1165,27 @@ class RecognitionModel(nn.Module):
         def make_entry(e):
             if e.tokens is None:
                 e.tokens = e.program.left_order_tokens(show_vars=False)
-            return FrontierEntry(
-                program=self.grammar.closedLikelihoodSummary(
-                    frontier.task.request, e.program
-                ),
-                logLikelihood=e.logLikelihood,
-                logPrior=e.logPrior,
-                tokens=e.tokens,
-                test=e.program,
-            )
+            try:
+                return FrontierEntry(
+                    program=self.grammar.closedLikelihoodSummary(
+                        frontier.task.request, e.program
+                    ),
+                    logLikelihood=e.logLikelihood,
+                    logPrior=self.grammar.logLikelihood(
+                        frontier.task.request, e.program
+                    ),
+                    tokens=e.tokens,
+                    test=e.program,
+                )
+            except:
+                return None
 
-        return Frontier([make_entry(e) for e in frontier], task=frontier.task)
+        frontier_summaries = [make_entry(e) for e in frontier]
+        frontier_summaries = [s for s in frontier_summaries if s is not None]
+        if len(frontier_summaries) == 0:
+            return None
+        else:
+            return Frontier(frontier_summaries, task=frontier.task)
 
     def pairwise_cosine_similarity(self, a, b, eps=1e-8):
         """
@@ -1246,6 +1256,7 @@ class RecognitionModel(nn.Module):
         auxLoss=False,
         vectorized=True,
         epochs=None,
+        generateNewHelmholtz=True,
     ):
         """
         helmholtzRatio: What fraction of the training data should be forward samples from the generative model?
@@ -1287,7 +1298,7 @@ class RecognitionModel(nn.Module):
 
         # This determines whether we have pre-enumerated a set of helmholtzFrontiers: if we have not,
         # we will need to sample them during the training loop itself.
-        randomHelmholtz = len(helmholtzFrontiers) < 2
+        randomHelmholtz = len(helmholtzFrontiers) < 1
         if randomHelmholtz:
             print(
                 "No pre-enumerated helmholtzFrontiers: we will sample randomly during the training loop."
@@ -1404,17 +1415,18 @@ class RecognitionModel(nn.Module):
                 and self.featureExtractor.parallelTaskOfProgram
                 else 1
             )
-            if updateCPUs > 1:
-                eprint(
-                    "Updating Helmholtz tasks with",
-                    updateCPUs,
-                    "CPUs",
-                    "while using",
-                    getThisMemoryUsage(),
-                    "memory",
-                )
+            # if updateCPUs > 1:
+            #     eprint(
+            #         "Updating Helmholtz tasks with",
+            #         updateCPUs,
+            #         "CPUs",
+            #         "while using",
+            #         getThisMemoryUsage(),
+            #         "memory",
+            #     )
 
-            if randomHelmholtz or switchToRandom:
+            if generateNewHelmholtz and randomHelmholtz or switchToRandom:
+                print("Sampling new helmholtz frontiers during training.")
                 newFrontiers = self.sampleManyHelmholtz(requests, helmholtzBatch, CPUs)
                 newEntries = []
                 for f in newFrontiers:
@@ -1488,10 +1500,13 @@ class RecognitionModel(nn.Module):
         # We replace each program in the frontier with its likelihoodSummary
         # This is because calculating likelihood summaries requires juggling types
         # And type stuff is expensive!
-        frontiers = [
-            self.replaceProgramsWithLikelihoodSummaries(f).normalize()
-            for f in frontiers
-        ]
+        initial_num_frontiers = len(frontiers)
+        frontiers = [self.replaceProgramsWithLikelihoodSummaries(f) for f in frontiers]
+        frontiers = [f for f in frontiers if f is not None]
+        frontiers = [f.normalize() for f in frontiers]
+        print(
+            f"Attempted frontier likelihood normalization. Initial frontiers: {initial_num_frontiers}. Now: {len(frontiers)}"
+        )
 
         feature_extractor_names = [
             str(encoder.__class__.__name__)
@@ -1547,7 +1562,10 @@ class RecognitionModel(nn.Module):
                 # Randomly decide whether to sample from the generative model
                 dreaming = random.random() < helmholtzRatio
                 if dreaming:
-                    frontier = getHelmholtz()
+                    try:
+                        frontier = getHelmholtz()
+                    except:
+                        continue  # Just use the training frontier.
                 self.zero_grad()
                 loss, classificationLoss = (
                     self.frontierBiasOptimal(
@@ -1714,6 +1732,7 @@ class RecognitionModel(nn.Module):
         evaluationTimeout=None,
         max_mem_per_enumeration_thread=1000000,
         solver_directory=".",  # Default solver directory is top level in original DreamCoder.
+        likelihood_model=INDUCTIVE_EXAMPLES_LIKELIHOOD_MODEL,
     ):
         with timing("Evaluated recognition model"):
             grammars = {task: self.grammarOfTask(task) for task in tasks}
@@ -1736,6 +1755,7 @@ class RecognitionModel(nn.Module):
             unigramGrammar=self.generativeModel,
             max_mem_per_enumeration_thread=max_mem_per_enumeration_thread,
             solver_directory=solver_directory,
+            likelihood_model_string=likelihood_model,
         )
 
 

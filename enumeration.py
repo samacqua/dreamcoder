@@ -8,6 +8,10 @@ import subprocess
 
 DEFAULT_SOLVER_DIRECTORY = "."
 
+INDUCTIVE_EXAMPLES_LIKELIHOOD_MODEL = "inductive_examples_likelihood_model"  # Only use the inductive examples to determine the likelihood.
+
+INDUCTIVE_EXAMPLES_DISCOUNTED_PRIOR_LIKELIHOOD_MODEL = "inductive_examples_discounted_prior_likelihood_model"  # Use the inductive examples or otherwise use a discounted prior
+
 
 def multicoreEnumeration(
     g,
@@ -23,6 +27,7 @@ def multicoreEnumeration(
     unigramGrammar=None,
     max_mem_per_enumeration_thread=1000000,
     solver_directory=DEFAULT_SOLVER_DIRECTORY,
+    likelihood_model_string=INDUCTIVE_EXAMPLES_LIKELIHOOD_MODEL,
 ):
     """g: Either a Grammar, or a map from task to grammar.
     Returns (list-of-frontiers, map-from-task-to-search-time)"""
@@ -30,7 +35,9 @@ def multicoreEnumeration(
     # We don't use actual threads but instead use the multiprocessing
     # library. This is because we need to be able to kill workers.
     # from multiprocess import Process, Queue
-    print(f"Beginning enumeration with a total of {CPUs} CPUs.")
+    print(
+        f"Beginning enumeration on a total of {len(tasks)} tasks with a total of {CPUs} CPUs."
+    )
     from multiprocessing import Queue
 
     # everything that gets sent between processes will be dilled
@@ -49,6 +56,8 @@ def multicoreEnumeration(
     if solver == "pypy" or solver == "python":
         # Use an all or nothing likelihood model.
         likelihoodModel = AllOrNothingLikelihoodModel(timeout=evaluationTimeout)
+    if solver == "ocaml":
+        likelihoodModel = likelihood_model_string
 
     solver = solvers[solver]
 
@@ -76,9 +85,7 @@ def multicoreEnumeration(
         else lambda f, *a, **k: f(*a, **k)
     )
     if disableParallelism:
-        eprint(
-            "Disabling parallelism on the Python side because we only have one job."
-        )
+        eprint("Disabling parallelism on the Python side because we only have one job.")
         eprint("If you are using ocaml, there could still be parallelism.")
 
     # Map from task to the shortest time to find a program solving it
@@ -232,13 +239,9 @@ def multicoreEnumeration(
 
             newFrontiers, searchTimes, pc = message.value
             for t, f in newFrontiers.items():
-                oldBest = (
-                    None if len(frontiers[t]) == 0 else frontiers[t].bestPosterior
-                )
+                oldBest = None if len(frontiers[t]) == 0 else frontiers[t].bestPosterior
                 frontiers[t] = frontiers[t].combine(f)
-                newBest = (
-                    None if len(frontiers[t]) == 0 else frontiers[t].bestPosterior
-                )
+                newBest = None if len(frontiers[t]) == 0 else frontiers[t].bestPosterior
 
                 taskToNumberOfPrograms[t] += pc
 
@@ -350,16 +353,15 @@ def solveForTask_ocaml(
     message = {
         "DSL": g.json(),
         "tasks": [taskMessage(t) for t in tasks],
-        "programTimeout": evaluationTimeout,
+        "programTimeout": float(evaluationTimeout),
         "nc": CPUs,
         "timeout": timeout,
         "lowerBound": lowerBound,
         "upperBound": upperBound,
         "budgetIncrement": budgetIncrement,
         "verbose": verbose,
-        "shatter": 5
-        if len(tasks) == 1 and "turtle" in str(tasks[0].request)
-        else 10,
+        "shatter": 5 if len(tasks) == 1 and "turtle" in str(tasks[0].request) else 10,
+        "likelihoodModel": likelihoodModel,
     }
 
     if hasattr(tasks[0], "maxParameters") and tasks[0].maxParameters is not None:
@@ -435,10 +437,9 @@ def solveForTask_ocaml(
         # and only later discovered the good high likelihood program
         else:
             searchTimes[t] = (
-                min(
-                    (e["logLikelihood"] + e["logPrior"], e["time"])
-                    for e in solutions
-                )[1]
+                min((e["logLikelihood"] + e["logPrior"], e["time"]) for e in solutions)[
+                    1
+                ]
                 + elapsedTime
             )
 

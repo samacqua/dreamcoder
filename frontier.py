@@ -12,6 +12,7 @@ class FrontierEntry(object):
         logPosterior=None,
         tokens=None,
         test=None,
+        origin=None,
     ):
         self.logPosterior = (
             logPrior + logLikelihood if logPosterior is None else logPosterior
@@ -25,6 +26,7 @@ class FrontierEntry(object):
             else:
                 tokens = self.program.left_order_tokens(show_vars=False)
         self.tokens = tokens
+        self.origin = origin
 
     def __repr__(self):
         return "FrontierEntry(program={self.program}, logPrior={self.logPrior}, logLikelihood={self.logLikelihood}".format(
@@ -51,13 +53,13 @@ class Frontier(object):
             "request": self.task.request.json(),
             "task": str(self.task),
             "programs": [
-                {"program": str(e.program), "logLikelihood": e.logLikelihood}
+                {"program": str(e.program), "logLikelihood": e.logLikelihood, "origin": e.origin}
                 for e in self
             ],
         }
 
     @staticmethod
-    def makeFromJSON(task, grammar, json_frontier):
+    def from_json(task, grammar, json_frontier):
         from dreamcoder.program import Program
 
         return Frontier(
@@ -67,6 +69,7 @@ class Frontier(object):
                     logLikelihood=e["logLikelihood"],
                     tokens=None,
                     logPrior=grammar.logLikelihood(task.request, p),
+                    origin=e.get("origin"),
                 )
                 for e in json_frontier["programs"]
                 for p in [Program.parse(e["program"])]
@@ -166,14 +169,15 @@ class Frontier(object):
     def bestPosterior(self):
         return min(self.entries, key=lambda e: (-e.logPosterior, str(e.program)))
 
-    def replaceWithSupervised(self, g):
+    def replaceWithSupervised(self, g, compute_likelihoods=True):
         assert self.task.supervision is not None
-        return g.rescoreFrontier(
-            Frontier(
-                [FrontierEntry(self.task.supervision, logLikelihood=0.0, logPrior=0.0)],
-                task=self.task,
-            )
+        frontier = Frontier(
+            [FrontierEntry(self.task.supervision, logLikelihood=0.0, logPrior=0.0)],
+            task=self.task,
         )
+        if compute_likelihoods:
+            frontier = g.rescoreFrontier(frontier)
+        return frontier
 
     @property
     def bestll(self):
@@ -240,54 +244,53 @@ class Frontier(object):
 
         x = {e.program: e for e in self}
         y = {e.program: e for e in other}
-        programs = set(x.keys()) | set(y.keys())
         union = []
-        for p in programs:
-            if p in x:
-                e1 = x[p]
-                if p in y:
-                    e2 = y[p]
-                    if abs(e1.logPrior - e2.logPrior) > tolerance:
+        for p, e1 in x.items():
+            if p in y:
+                e2 = y[p]
+                if abs(e1.logPrior - e2.logPrior) > tolerance:
+                    eprint(
+                        "WARNING: Log priors differed during frontier combining: %f vs %f"
+                        % (e1.logPrior, e2.logPrior)
+                    )
+                    eprint("WARNING: \tThe program is", p)
+                    eprint()
+                if abs(e1.logLikelihood - e2.logLikelihood) > tolerance:
+                    foundDifference = True
+                    eprint(
+                        "WARNING: Log likelihoods deferred for %s: %f & %f"
+                        % (p, e1.logLikelihood, e2.logLikelihood)
+                    )
+                    if hasattr(self.task, "BIC"):
                         eprint(
-                            "WARNING: Log priors differed during frontier combining: %f vs %f"
-                            % (e1.logPrior, e2.logPrior)
-                        )
-                        eprint("WARNING: \tThe program is", p)
-                        eprint()
-                    if abs(e1.logLikelihood - e2.logLikelihood) > tolerance:
-                        foundDifference = True
-                        eprint(
-                            "WARNING: Log likelihoods deferred for %s: %f & %f"
-                            % (p, e1.logLikelihood, e2.logLikelihood)
-                        )
-                        if hasattr(self.task, "BIC"):
-                            eprint(
-                                "\t%d examples, BIC=%f, parameterPenalty=%f, n parameters=%d, correct likelihood=%f"
-                                % (
-                                    len(self.task.examples),
-                                    self.task.BIC,
-                                    self.task.BIC * math.log(len(self.task.examples)),
-                                    substringOccurrences("REAL", str(p)),
-                                    substringOccurrences("REAL", str(p))
-                                    * self.task.BIC
-                                    * math.log(len(self.task.examples)),
-                                )
-                            )
-                            e1.logLikelihood = (
-                                -substringOccurrences("REAL", str(p))
+                            "\t%d examples, BIC=%f, parameterPenalty=%f, n parameters=%d, correct likelihood=%f"
+                            % (
+                                len(self.task.examples),
+                                self.task.BIC,
+                                self.task.BIC * math.log(len(self.task.examples)),
+                                substringOccurrences("REAL", str(p)),
+                                substringOccurrences("REAL", str(p))
                                 * self.task.BIC
-                                * math.log(len(self.task.examples))
+                                * math.log(len(self.task.examples)),
                             )
-                            e2.logLikelihood = e1.logLikelihood
-
-                        e1 = FrontierEntry(
-                            program=e1.program,
-                            logLikelihood=(e1.logLikelihood + e2.logLikelihood) / 2,
-                            logPrior=e1.logPrior,
                         )
-            else:
-                e1 = y[p]
+                        e1.logLikelihood = (
+                            -substringOccurrences("REAL", str(p))
+                            * self.task.BIC
+                            * math.log(len(self.task.examples))
+                        )
+                        e2.logLikelihood = e1.logLikelihood
+
+                    e1 = FrontierEntry(
+                        program=e1.program,
+                        logLikelihood=(e1.logLikelihood + e2.logLikelihood) / 2,
+                        logPrior=e1.logPrior,
+                        origin=e1.origin,
+                    )
             union.append(e1)
+        for p, e2 in y.items():
+            if p not in x:
+                union.append(e2)
 
         if foundDifference:
             eprint(
