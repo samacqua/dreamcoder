@@ -450,16 +450,16 @@ def solveForTask_pypy(
     _=None,
     elapsedTime=0.0,
     g=None,
-    task=None,
+    tasks=None,
     lowerBound=None,
     upperBound=None,
     budgetIncrement=None,
     timeout=None,
     likelihoodModel=None,
     evaluationTimeout=None,
-    maximumFrontier=None,
+    maximumFrontiers=None,
     testing=False,
-    unigramGrammar=None,
+    unigramGrammar=None, **kwargs
 ):
     return callCompiled(
         enumerateForTasks,
@@ -492,7 +492,7 @@ def solveForTask_python(
     evaluationTimeout=None,
     maximumFrontiers=None,
     testing=False,
-    unigramGrammar=None,
+    unigramGrammar=None, **kwargs
 ):
     return enumerateForTasks(
         g,
