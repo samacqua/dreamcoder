@@ -83,8 +83,9 @@ class Task(object):
                 raise EvaluationTimeout()
 
         try:
-            signal.signal(signal.SIGVTALRM, timeoutCallBack)
-            signal.setitimer(signal.ITIMER_VIRTUAL, timeout)
+            if timeout is not None:
+                signal.signal(signal.SIGVTALRM, timeoutCallBack)
+                signal.setitimer(signal.ITIMER_VIRTUAL, timeout)
 
             try:
                 f = e.evaluate([])
