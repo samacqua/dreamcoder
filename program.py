@@ -96,7 +96,7 @@ class Program(object):
             elif p.isPrimitive:
                 return tokens + [str(p)]
             else:
-                assert False
+                assert False, f"Unknown program type {p}"
 
         return t(show_vars, [], self)
 
@@ -177,16 +177,16 @@ class Program(object):
         def p(e):
             if isinstance(e, list):
                 if e[0] == "#":
-                    assert len(e) == 2
+                    assert len(e) == 2, f"Expected # to have one argument, got {len(e)}"
                     return Invented(p(e[1]))
                 if e[0] == "lambda":
-                    assert len(e) == 2
+                    assert len(e) == 2, f"Expected lambda to have one argument, got {len(e)}"
                     return Abstraction(p(e[1]))
                 f = p(e[0])
                 for x in e[1:]:
                     f = Application(f, p(x))
                 return f
-            assert isinstance(e, str)
+            assert isinstance(e, str), f"Expected string, got {type(e)}"
             if e[0] == "$":
                 return Index(int(e[1:]))
 
