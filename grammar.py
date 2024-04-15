@@ -371,7 +371,7 @@ class Grammar(object):
             if not silent:
                 eprint(f, "Not in candidates")
                 eprint("Candidates is", candidates)
-                # eprint("grammar:", grammar.productions)
+                eprint("grammar:", self.productions)
                 eprint("request is", request)
                 eprint("xs", xs)
                 eprint("environment", environment)
@@ -393,6 +393,7 @@ class Grammar(object):
             eprint("xs", xs)
             eprint("argumentTypes", argumentTypes)
             # This should absolutely never occur
+            import pdb; pdb.set_trace()
             raise GrammarFailure((context, environment, request, expression))
 
         for argumentType, argument in zip(argumentTypes, xs):

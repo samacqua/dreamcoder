@@ -103,7 +103,7 @@ class Task(object):
                     try:
                         p = self.predict(f, x)
                     except BaseException as err:
-                        print("Err during evaluation" + str(err))
+                        # print("Err during evaluation" + str(err))
                         p = None
                     if self.cache:
                         EVALUATIONTABLE[(x, e)] = p
