@@ -263,7 +263,7 @@ class Grammar(object):
             for t, p, k in variableCandidates
         ]
         if candidates == []:
-            raise NoCandidates()
+            raise NoCandidates(f"No candidates for {request} in context {context} with environment {environment}")
         # eprint("candidates inside buildCandidates before norm:")
         # eprint(candidates)
 
@@ -632,8 +632,24 @@ class Grammar(object):
         upperBound,
         maximumDepth=20,
         lowerBound=0.0,
+        no_candidates_okay: bool = False,
     ):
-        """Enumerates all programs whose MDL satisfies: lowerBound <= MDL < upperBound"""
+        """Enumerates all programs whose MDL satisfies: lowerBound <= MDL < upperBound.
+        
+        Args:
+            context: The context in which to evaluate the programs.
+            environment: The environment in which to evaluate the programs.
+            request: The type of the programs to enumerate.
+            upperBound: The upper bound on the description length of the programs.
+            maximumDepth: The maximum depth of the programs.
+            lowerBound: The lower bound on the description length of the programs.
+            no_candidates_okay: Whether to raise an exception if there are no candidates. This should only be set to
+                false if you are executing a potentially incorrect grammar. If you are using a hand-designed DSL, this
+                should never happen because it means there is no possible program that satisfies the request type.
+        
+        Returns:
+            A generator of tuples (-description length, context, expression).
+        """
         if upperBound < 0 or maximumDepth == 1:
             return
 
@@ -646,13 +662,20 @@ class Grammar(object):
                 upperBound=upperBound,
                 lowerBound=lowerBound,
                 maximumDepth=maximumDepth,
+                no_candidates_okay=no_candidates_okay
             ):
                 yield l, newContext, Abstraction(b)
 
         else:
-            candidates = self.buildCandidates(
-                request, context, environment, normalize=True
-            )
+            # TODO: Integrate with enumerator to stop search if no candidates.
+            try:
+                candidates = self.buildCandidates(
+                    request, context, environment, normalize=True
+                )
+            except NoCandidates as e:
+                if no_candidates_okay:
+                    return
+                raise e
 
             for l, t, p, newContext in candidates:
                 mdl = -l
@@ -668,6 +691,7 @@ class Grammar(object):
                     upperBound=upperBound + l,
                     lowerBound=lowerBound + l,
                     maximumDepth=maximumDepth - 1,
+                    no_candidates_okay=no_candidates_okay,
                 ):
                     yield aL + l, aK, application
 
@@ -686,6 +710,7 @@ class Grammar(object):
         maximumDepth=20,
         originalFunction=None,
         argumentIndex=0,
+        no_candidates_okay: bool = False,
     ):
         if upperBound < 0.0 or maximumDepth == 1:
             return
@@ -707,6 +732,7 @@ class Grammar(object):
                 upperBound=upperBound,
                 lowerBound=0.0,
                 maximumDepth=maximumDepth,
+                no_candidates_okay=no_candidates_okay,
             ):
                 if violatesSymmetry(originalFunction, arg, argumentIndex):
                     continue
@@ -722,6 +748,7 @@ class Grammar(object):
                     maximumDepth=maximumDepth,
                     originalFunction=originalFunction,
                     argumentIndex=argumentIndex + 1,
+                    no_candidates_okay=no_candidates_okay,
                 ):
                     yield resultL + argL, resultK, result
 

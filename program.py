@@ -142,6 +142,12 @@ class Program(object):
             if child.isIndex and child.i >= surroundingAbstractions:
                 yield child.i - surroundingAbstractions
 
+    def walk(self):
+        raise NotImplementedError
+    
+    def substitute(self, p1, p2):
+        raise NotImplementedError
+
     @property
     def isIndex(self):
         return False

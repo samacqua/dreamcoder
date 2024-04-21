@@ -28,6 +28,7 @@ def multicoreEnumeration(
     max_mem_per_enumeration_thread=1000000,
     solver_directory=DEFAULT_SOLVER_DIRECTORY,
     likelihood_model_string=INDUCTIVE_EXAMPLES_LIKELIHOOD_MODEL,
+    no_candidates_okay=False,
 ):
     """g: Either a Grammar, or a map from task to grammar.
     Returns (list-of-frontiers, map-from-task-to-search-time)"""
@@ -212,6 +213,7 @@ def multicoreEnumeration(
                     unigramGrammar=unigramGrammar,
                     max_mem_per_enumeration_thread=max_mem_per_enumeration_thread,
                     solver_directory=solver_directory,
+                    no_candidates_okay=no_candidates_okay,
                 )
                 id2CPUs[nextID] = allocation[j]
                 id2job[nextID] = j
@@ -492,6 +494,7 @@ def solveForTask_python(
     evaluationTimeout=None,
     maximumFrontiers=None,
     testing=False,
+    no_candidates_okay=False,
     unigramGrammar=None, **kwargs
 ):
     return enumerateForTasks(
@@ -507,6 +510,7 @@ def solveForTask_python(
         lowerBound=lowerBound,
         upperBound=upperBound,
         unigramGrammar=None,
+        no_candidates_okay=no_candidates_okay,
     )
 
 
@@ -530,6 +534,7 @@ def enumerateForTasks(
     budgetIncrement=1.0,
     maximumFrontiers=None,
     unigramGrammar=None,
+    no_candidates_okay=False,
 ):
     assert timeout is not None, "enumerateForTasks: You must provide a timeout."
 
@@ -564,6 +569,7 @@ def enumerateForTasks(
                 maximumDepth=99,
                 upperBound=budget,
                 lowerBound=previousBudget,
+                no_candidates_okay=no_candidates_okay,
             ):
                 descriptionLength = -prior
                 # Shouldn't see it on this iteration

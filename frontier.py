@@ -1,11 +1,14 @@
+from typing import List
+
 from dreamcoder.utilities import *
 from dreamcoder.task import Task
+from dreamcoder.program import Program
 
 
 class FrontierEntry(object):
     def __init__(
         self,
-        program,
+        program: Program,
         _=None,
         logPrior=None,
         logLikelihood=None,
@@ -36,7 +39,7 @@ class FrontierEntry(object):
 
 class Frontier(object):
     def __init__(self, frontier, task):
-        self.entries = frontier
+        self.entries: List[FrontierEntry] = frontier
         self.task = task
 
     def __repr__(self):
