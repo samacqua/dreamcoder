@@ -170,7 +170,7 @@ class Grammar(object):
             lines.append(l)
         return "\n".join(lines)
 
-    def json(self):
+    def json(self, **kwargs):
         j = {
             "logVariable": self.logVariable,
             "productions": [
@@ -180,6 +180,8 @@ class Grammar(object):
         }
         if self.continuationType is not None:
             j["continuationType"] = self.continuationType.json()
+        for k, v in kwargs.items():
+            j[k] = v
         return j
 
     def _immutable_code(self):
