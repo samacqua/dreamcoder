@@ -12,7 +12,7 @@ EVALUATIONTABLE = {}
 
 
 class Task(object):
-    def __init__(self, name, request, examples, features=None, cache=False):
+    def __init__(self, name, request, examples, features=None, cache=False, desc=None):
         """request: the type of this task
         examples: list of tuples of (input, output). input should be a tuple, with one entry for each argument
         cache: should program evaluations be cached?
@@ -23,6 +23,7 @@ class Task(object):
         self.name = name
         self.nearest_name = None  # Nearest task for kNN featurization.
         self.examples = examples
+        self.desc = desc
         if len(self.examples) > 0:
             assert all(len(xs) == len(examples[0][0]) for xs, _ in examples), (
                 "(for task %s) FATAL: Number of arguments varies." % name
