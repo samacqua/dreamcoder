@@ -37,7 +37,7 @@ def retrieveJSONTasks(filename, features=False):
         [((ex["i"],), ex["o"]) for ex in item["examples"]],
         features=(None if not features else list_features(
             [((ex["i"],), ex["o"]) for ex in item["examples"]])),
-        cache=False,
+        cache=False, desc=item.get("description", None)
     ) for item in loaded]
 
 
