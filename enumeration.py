@@ -1,6 +1,6 @@
 from dreamcoder.likelihoodModel import AllOrNothingLikelihoodModel
 from dreamcoder.grammar import *
-from dreamcoder.utilities import get_root_dir, limit_virtual_memory_fn
+from dreamcoder.utilities import get_root_dir
 
 import os
 import traceback
@@ -32,6 +32,8 @@ def multicoreEnumeration(
 ):
     """g: Either a Grammar, or a map from task to grammar.
     Returns (list-of-frontiers, map-from-task-to-search-time)"""
+
+    # assert no_candidates_okay
 
     # We don't use actual threads but instead use the multiprocessing
     # library. This is because we need to be able to kill workers.
@@ -266,7 +268,7 @@ def multicoreEnumeration(
             eprint("Unknown message result:", message.result)
             assert False
 
-    eprint(
+    print(
         "We enumerated this many programs, for each task:\n\t",
         list(taskToNumberOfPrograms.values()),
     )
@@ -325,6 +327,7 @@ def solveForTask_ocaml(
     verbose=False,
     max_mem_per_enumeration_thread=1000000,
     solver_directory=DEFAULT_SOLVER_DIRECTORY,
+    **kwargs
 ):
 
     import json
@@ -461,7 +464,9 @@ def solveForTask_pypy(
     evaluationTimeout=None,
     maximumFrontiers=None,
     testing=False,
-    unigramGrammar=None, **kwargs
+    unigramGrammar=None,
+    no_candidates_okay=False,
+    **kwargs
 ):
     return callCompiled(
         enumerateForTasks,
@@ -477,6 +482,7 @@ def solveForTask_pypy(
         lowerBound=lowerBound,
         upperBound=upperBound,
         unigramGrammar=None,
+        no_candidates_okay=no_candidates_okay,
     )
 
 

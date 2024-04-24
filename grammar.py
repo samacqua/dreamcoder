@@ -1585,8 +1585,12 @@ class ContextualGrammar:
         parentIndex=None,
         maximumDepth=20,
         lowerBound=0.0,
+        no_candidates_okay=False
     ):
         """Enumerates all programs whose MDL satisfies: lowerBound <= MDL < upperBound"""
+
+        del no_candidates_okay
+
         if upperBound < 0 or maximumDepth == 1:
             return
 
