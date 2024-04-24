@@ -11,9 +11,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import nltk
-import num2words
-
 from sklearn.feature_extraction import DictVectorizer
 
 
