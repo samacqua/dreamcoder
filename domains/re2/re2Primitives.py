@@ -108,7 +108,7 @@ def __regex_split(s1, s2):
         if len(remaining) > 0:
             ret.append(remaining)
         return ret
-    except e:
+    except:
         return [s2]
 
 
