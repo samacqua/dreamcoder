@@ -474,10 +474,11 @@ def callCompiled(f, *arguments, **keywordArguments):
     timeout = keywordArguments.pop('compiledTimeout', None)
 
     # Use absolute paths.
-    compiled_driver_file = os.path.join(get_root_dir(), 'bin', 'compiledDriver.py')
+    # TODO: This references src outside of the directory. Move this to DC but
+    # maintain flexibility to reference paths / modules in parent directory.
+    compiled_driver_file = os.path.join(get_root_dir(), 'src', 'compiledDriver.py')
     p = subprocess.Popen(['pypy3'] + pypyArgs + [compiled_driver_file],
                          stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-
 
     if PIDCallBack is not None:
         PIDCallBack(p.pid)
@@ -490,11 +491,7 @@ def callCompiled(f, *arguments, **keywordArguments):
     start = time.time()
     dill.dump(request, p.stdin)
 
-    #p.stdin.write(request)
     p.stdin.flush()
-    #p.stdin.close()
-
-
 
     dt = time.time() - start
     if dt > 1:
@@ -771,25 +768,24 @@ class RunWithTimeout(Exception):
 
 
 def runWithTimeout(k, timeout):
-    if timeout is None: return k()
-    def timeoutCallBack(_1,_2):
+    """Runs the function k with the given timeout."""
+    if timeout is None:
+        return k()
+
+    def handler(signum, frame):
         raise RunWithTimeout()
-    signal.signal(signal.SIGPROF, timeoutCallBack)
-    signal.setitimer(signal.ITIMER_PROF, timeout)
 
     try:
+        signal.signal(signal.SIGALRM, handler)
+        signal.alarm(timeout)
         result = k()
-        signal.signal(signal.SIGPROF, lambda *_:None)
-        signal.setitimer(signal.ITIMER_PROF, 0)
-        return result
     except RunWithTimeout:
-        signal.signal(signal.SIGPROF, lambda *_:None)
-        signal.setitimer(signal.ITIMER_PROF, 0)
+        signal.alarm(0)
         raise RunWithTimeout()
-    except Exception as e:
-        signal.signal(signal.SIGPROF, lambda *_:None)
-        signal.setitimer(signal.ITIMER_PROF, 0)
-        raise
+    finally:
+        signal.alarm(0)
+    signal.alarm(0)
+    return result
 
 
 def crossProduct(a, b):
