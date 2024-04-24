@@ -1693,24 +1693,24 @@ class RecognitionModel(nn.Module):
         flushEverything()
         frequency = N / 50
         startingSeed = random.random()
+        sample_sequential = True    # Sequentially for ensemble training.
+        if sample_sequential:
+            samples = [
+                self.sampleHelmholtz(
+                    requests,
+                    statusUpdate="." if n % frequency == 0 else None,
+                    seed=startingSeed + n,
+                )
+                for n in range(N)
+            ]
+        else:
+            samples = parallelMap(
+                1,
+                lambda n: self.sampleHelmholtz(requests,
+                                            statusUpdate='.' if n % frequency == 0 else None,
+                                            seed=startingSeed + n),
+                range(N))
 
-        # Sequentially for ensemble training.
-        samples = [
-            self.sampleHelmholtz(
-                requests,
-                statusUpdate="." if n % frequency == 0 else None,
-                seed=startingSeed + n,
-            )
-            for n in range(N)
-        ]
-
-        # (cathywong) Disabled for ensemble training.
-        # samples = parallelMap(
-        #     1,
-        #     lambda n: self.sampleHelmholtz(requests,
-        #                                    statusUpdate='.' if n % frequency == 0 else None,
-        #                                    seed=startingSeed + n),
-        #     range(N))
         eprint()
         flushEverything()
         samples = [z for z in samples if z is not None]
@@ -1811,12 +1811,13 @@ class RecurrentFeatureExtractor(nn.Module):
         self.parallelTaskOfProgram = True
 
         assert lexicon
-        lexicon = sorted(lexicon)
+        lexicon = sorted(lexicon, key=lambda x: str(x))
         self.specialSymbols = [
             "STARTING",  # start of entire sequence
             "ENDING",  # ending of entire sequence
             "STARTOFOUTPUT",  # begins the start of the output
-            "ENDOFINPUT",  # delimits the ending of an input - we might have multiple inputs
+            "ENDOFINPUT",  # delimits the ending of an input - we might have multiple inputs,
+            "[UNK]" # unknown token
         ]
         lexicon += self.specialSymbols
         self.lexicon = lexicon
@@ -1845,6 +1846,7 @@ class RecurrentFeatureExtractor(nn.Module):
         self.endingIndex = self.symbolToIndex["ENDING"]
         self.startOfOutputIndex = self.symbolToIndex["STARTOFOUTPUT"]
         self.endOfInputIndex = self.symbolToIndex["ENDOFINPUT"]
+        self.unkIndex = self.symbolToIndex["[UNK]"]     # TODO: Dynamically change lexicon.
 
         # Maximum number of inputs/outputs we will run the recognition
         # model on per task
@@ -1873,7 +1875,7 @@ class RecurrentFeatureExtractor(nn.Module):
             if not (s in self.specialSymbols)
         }
 
-    def packExamples(self, examples):
+    def packExamples(self, examples, unk_okay=True):
         """IMPORTANT! xs must be sorted in decreasing order of size because pytorch is stupid"""
         es = []
         sizes = []
@@ -1885,7 +1887,8 @@ class RecurrentFeatureExtractor(nn.Module):
                 e.append(self.endOfInputIndex)
             e.append(self.startOfOutputIndex)
             for s in y:
-                e.append(self.symbolToIndex[s])
+                assert unk_okay or s in self.symbolToIndex, f"Unknown symbol {s}"
+                e.append(self.symbolToIndex.get(s, self.unkIndex))
             e.append(self.endingIndex)
             if es != []:
                 assert len(e) <= len(
@@ -1954,7 +1957,7 @@ class RecurrentFeatureExtractor(nn.Module):
 
     def taskOfProgram(self, p, tp):
         # TODO -- remove this
-        self.helmholtzTimeout, self.helmholtzEvaluationTimeout = 0.25, 0.25
+        self.helmholtzTimeout, self.helmholtzEvaluationTimeout = 1, 1
         # half of the time we randomly mix together inputs
         # this gives better generalization on held out tasks
         # the other half of the time we train on sets of inputs in the training data
