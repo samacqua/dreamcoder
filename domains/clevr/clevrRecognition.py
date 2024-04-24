@@ -59,7 +59,10 @@ class ClevrFeatureExtractor(RecurrentFeatureExtractor):
         
         """
         tokenized = []
-        return_type, _ = makeClevrTasks.infer_return_type([task.examples[0][-1]])
+        try:
+            return_type, _ = makeClevrTasks.infer_return_type([task.examples[0][-1]])
+        except:
+            return None
 
         def tokenize_obj_list(obj_list):
             flattened = []

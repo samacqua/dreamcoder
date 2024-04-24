@@ -217,14 +217,22 @@ def build_examples(q, input_scenes):
     return examples
 
 def infer_return_type(answers):
-    if type(answers[0]) == dict: return tlist(tclevrobject), True
-    elif type(answers[0]) == list: return tlist(tclevrobject), True
-    elif type(answers[0]) == int: return tint, False
-    elif type(answers[0]) == bool: return tbool, False
-    elif answers[0] in attribute_constants['color'] + [NULL_COLOR]: return tclevrcolor, False
-    elif answers[0] in attribute_constants['shape'] + [NULL_SHAPE]: return tclevrshape, False
-    elif answers[0] in attribute_constants['size'] + [NULL_SIZE]: return tclevrsize, False
-    elif answers[0] in attribute_constants['material'] + [NULL_MATERIAL]: return tclevrmaterial, False
+    if type(answers[0]) == dict:
+        return tlist(tclevrobject), True
+    elif type(answers[0]) == list:
+        return tlist(tclevrobject), True
+    elif type(answers[0]) == int:
+        return tint, False
+    elif type(answers[0]) == bool:
+        return tbool, False
+    elif answers[0] in attribute_constants['color'] + [NULL_COLOR]:
+        return tclevrcolor, False
+    elif answers[0] in attribute_constants['shape'] + [NULL_SHAPE]:
+        return tclevrshape, False
+    elif answers[0] in attribute_constants['size'] + [NULL_SIZE]:
+        return tclevrsize, False
+    elif answers[0] in attribute_constants['material'] + [NULL_MATERIAL]:
+        return tclevrmaterial, False
     else: 
         print("Error: cannot infer return type!")
         print(answers)
