@@ -148,6 +148,9 @@ class Program(object):
     def substitute(self, p1, p2):
         raise NotImplementedError
 
+    def betaReduce(self):
+        raise NotImplementedError
+
     @property
     def isIndex(self):
         return False
