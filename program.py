@@ -286,12 +286,15 @@ class Application(Program):
         self.f = f
         self.x = x
         self.hashCode = None
+
+        # TODO: This is very sketchy way to determine conditionals. If we are going to use a name-based heuristic,
+        # then at least make it a property of the primitive at primitive definition.
         self.isConditional = (
             (not isinstance(f, int))
             and f.isApplication
             and f.f.isApplication
             and f.f.f.isPrimitive
-            and f.f.f.name == "if"
+            and f.f.f.name.startswith("if")
         )
         if self.isConditional:
             self.falseBranch = x
