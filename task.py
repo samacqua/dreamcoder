@@ -1,11 +1,17 @@
 from dreamcoder.program import *
 from dreamcoder.differentiation import *
 
+from queue import Queue
+import multiprocessing
 import signal
 
 
 class EvaluationTimeout(Exception):
     pass
+
+
+def timeout_handler(signum, frame):
+    raise EvaluationTimeout("Program ran out of time.")
 
 
 EVALUATIONTABLE = {}
@@ -29,6 +35,8 @@ class Task(object):
                 "(for task %s) FATAL: Number of arguments varies." % name
             )
         self.use_supervised = False
+
+        signal.signal(signal.SIGALRM, timeout_handler)
 
     def __str__(self):
         if self.supervision is None:
@@ -77,54 +85,104 @@ class Task(object):
         else:
             return self.use_supervised
 
-    def check(self, e, timeout=None):
-        if timeout is not None:
+    def safe_check(self, program, timeout=None, verbose=False):
+        """This check is thread-safe but much slower."""
 
-            def timeoutCallBack(_1, _2):
-                raise EvaluationTimeout()
+        # TODO: Use this sort of logic, but across tasks in parallel.
+
+        def check_worker(program, examples, queue=None):
+            if queue is None:
+                queue = Queue()
+
+            try:
+                f = program.evaluate([])
+            except IndexError as err:
+                queue.put(False)
+                return False
+            except Exception as err:
+                queue.put(False)
+                return False
+            
+            for x, y in examples:
+                try:
+                    p = self.predict(f, x)
+                except Exception as err:
+                    queue.put(False)
+                    return False
+                if p != y:
+                    queue.put(False)
+                    return False
+                
+            queue.put(True)
+            return True
+        
+        if timeout is not None:
+            queue = multiprocessing.Queue()
+            p = multiprocessing.Process(target=check_worker, args=(program, self.examples, queue))
+            p.start()
+            p.join(timeout)
+            if p.is_alive():
+                eprint("Timeout during evaluation", program)
+                p.terminate()
+                p.join()
+                return False
+            else:
+                return queue.get()
+        else:
+            return check_worker(program, self.examples)
+
+
+    def check(self, program, timeout=None, verbose=False):
+        """Checks if a program solves this task."""
+
+        # TODO: This sometimes hangs if a pure C process is running.
+        # This only would be during primitive evaluations, for example if the
+        # primitive has value range then range(int(1e100)) is not interruptible.
 
         try:
             if timeout is not None:
-                signal.signal(signal.SIGVTALRM, timeoutCallBack)
-                signal.setitimer(signal.ITIMER_VIRTUAL, timeout)
-
+                signal.alarm(timeout)
             try:
-                f = e.evaluate([])
-            except IndexError:
-                # free variable
+                f = program.evaluate([])
+            except IndexError as err:  # free variable
+                if verbose:
+                    eprint("Index error during evaluation", err)
                 return False
-            except Exception as e:
-                eprint("Exception during evaluation:", e)
+            except EvaluationTimeout as err:
+                if verbose:
+                    eprint("Timeout during evaluation", program)
+                raise err
+            except Exception as err:
+                eprint("Exception during evaluation:", err)
                 return False
 
             for x, y in self.examples:
-                if self.cache and (x, e) in EVALUATIONTABLE:
-                    p = EVALUATIONTABLE[(x, e)]
+                if self.cache and (x, program) in EVALUATIONTABLE:
+                    p = EVALUATIONTABLE[(x, program)]
                 else:
                     try:
                         p = self.predict(f, x)
-                    except BaseException as err:
-                        # print("Err during evaluation" + str(err))
+                    except EvaluationTimeout as err:
+                        if verbose:
+                            eprint("Timeout during prediction", program)
+                        raise err
+                    except Exception as err:
+                        if verbose:
+                            eprint("Err during evaluation", err)
                         p = None
                     if self.cache:
-                        EVALUATIONTABLE[(x, e)] = p
+                        EVALUATIONTABLE[(x, program)] = p
                 if p != y:
-                    if timeout is not None:
-                        signal.signal(signal.SIGVTALRM, lambda *_: None)
-                        signal.setitimer(signal.ITIMER_VIRTUAL, 0)
                     return False
 
             return True
-        # except e:
-        # eprint(e)
-        # assert(False)
+
         except EvaluationTimeout:
-            eprint("Timed out while evaluating", e)
+            eprint("Timed out while evaluating", program)
             return False
         finally:
             if timeout is not None:
-                signal.signal(signal.SIGVTALRM, lambda *_: None)
-                signal.setitimer(signal.ITIMER_VIRTUAL, 0)
+                signal.alarm(0)
 
     def logLikelihood(self, e, timeout=None):
         if self.check(e, timeout):
