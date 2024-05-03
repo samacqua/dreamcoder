@@ -719,6 +719,9 @@ class Stopwatch():
         self.running = True
         self._latestStart = time.time()
 
+    def increment(self, t):
+        self._elapsed += t
+
     def stop(self):
         if not self.running:
             eprint(

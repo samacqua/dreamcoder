@@ -634,7 +634,6 @@ class Grammar(object):
         upperBound,
         maximumDepth=20,
         lowerBound=0.0,
-        no_candidates_okay: bool = False,
     ):
         """Enumerates all programs whose MDL satisfies: lowerBound <= MDL < upperBound.
         
@@ -645,9 +644,6 @@ class Grammar(object):
             upperBound: The upper bound on the description length of the programs.
             maximumDepth: The maximum depth of the programs.
             lowerBound: The lower bound on the description length of the programs.
-            no_candidates_okay: Whether to raise an exception if there are no candidates. This should only be set to
-                false if you are executing a potentially incorrect grammar. If you are using a hand-designed DSL, this
-                should never happen because it means there is no possible program that satisfies the request type.
         
         Returns:
             A generator of tuples (-description length, context, expression).
@@ -664,24 +660,17 @@ class Grammar(object):
                 upperBound=upperBound,
                 lowerBound=lowerBound,
                 maximumDepth=maximumDepth,
-                no_candidates_okay=no_candidates_okay
             ):
                 yield l, newContext, Abstraction(b)
 
         else:
-            # TODO: Integrate with enumerator to stop search if no candidates.
-            try:
-                candidates = self.buildCandidates(
-                    request, context, environment, normalize=True
-                )
-            except NoCandidates as e:
-                if no_candidates_okay:
-                    return
-                raise e
+            candidates = self.buildCandidates(
+                request, context, environment, normalize=True
+            )
 
             for l, t, p, newContext in candidates:
                 mdl = -l
-                if not (mdl < upperBound):
+                if mdl >= upperBound:
                     continue
 
                 xs = t.functionArguments()
@@ -693,7 +682,6 @@ class Grammar(object):
                     upperBound=upperBound + l,
                     lowerBound=lowerBound + l,
                     maximumDepth=maximumDepth - 1,
-                    no_candidates_okay=no_candidates_okay,
                 ):
                     yield aL + l, aK, application
 
@@ -712,7 +700,6 @@ class Grammar(object):
         maximumDepth=20,
         originalFunction=None,
         argumentIndex=0,
-        no_candidates_okay: bool = False,
     ):
         if upperBound < 0.0 or maximumDepth == 1:
             return
@@ -734,7 +721,6 @@ class Grammar(object):
                 upperBound=upperBound,
                 lowerBound=0.0,
                 maximumDepth=maximumDepth,
-                no_candidates_okay=no_candidates_okay,
             ):
                 if violatesSymmetry(originalFunction, arg, argumentIndex):
                     continue
@@ -750,7 +736,6 @@ class Grammar(object):
                     maximumDepth=maximumDepth,
                     originalFunction=originalFunction,
                     argumentIndex=argumentIndex + 1,
-                    no_candidates_okay=no_candidates_okay,
                 ):
                     yield resultL + argL, resultK, result
 
@@ -1584,12 +1569,9 @@ class ContextualGrammar:
         parent=None,
         parentIndex=None,
         maximumDepth=20,
-        lowerBound=0.0,
-        no_candidates_okay=False
+        lowerBound=0.0
     ):
         """Enumerates all programs whose MDL satisfies: lowerBound <= MDL < upperBound"""
-
-        del no_candidates_okay
 
         if upperBound < 0 or maximumDepth == 1:
             return

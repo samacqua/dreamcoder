@@ -23,6 +23,7 @@ def multicoreEnumeration(
     maximumFrontier=None,
     verbose=True,
     evaluationTimeout=None,
+    maxMDL=None,
     testing=False,
     unigramGrammar=None,
     max_mem_per_enumeration_thread=1000000,
@@ -177,6 +178,8 @@ def multicoreEnumeration(
                     continue
                 g, request = j[:2]
                 bi = budgetIncrement(lowerBounds[j])
+                if maxMDL and lowerBounds[j] + bi > maxMDL:    # If we are going to exceed the maximum MDL, skip this job
+                    continue
                 thisTimeout = enumerationTimeout - stopwatches[j].elapsed
                 eprint(
                     "(python) Launching %s (%d tasks) w/ %d CPUs. %f <= MDL < %f. Timeout %f."
@@ -235,7 +238,15 @@ def multicoreEnumeration(
             activeCPUs -= id2CPUs[message.ID]
             stopwatches[id2job[message.ID]].stop()
 
-            newFrontiers, searchTimes, total_num_progs = message.value
+            newFrontiers, searchTimes, total_num_progs, *should_terminate = message.value
+
+            # If a task should terminate early for any reason, terminate it
+            # by incrementing the stopwatch past the timeout. This helps save
+            # time if it is known that further enumeration will not be useful.
+            should_terminate = should_terminate[0] if should_terminate else False
+            if should_terminate:
+                stopwatches[id2job[message.ID]].increment(enumerationTimeout)
+
             for t, f in newFrontiers.items():
                 oldBest = None if len(frontiers[t]) == 0 else frontiers[t].bestPosterior
                 frontiers[t] = frontiers[t].combine(f)
@@ -555,6 +566,7 @@ def enumerateForTasks(
     starting = time()
     previousBudget = lowerBound
     budget = lowerBound + budgetIncrement
+    no_candidates = False
     try:
         totalNumberOfPrograms = 0
         while (
@@ -564,51 +576,54 @@ def enumerateForTasks(
         ):
             numberOfPrograms = 0
 
-            for prior, _, p in g.enumeration(
-                Context.EMPTY,
-                [],
-                request,
-                maximumDepth=99,
-                upperBound=budget,
-                lowerBound=previousBudget,
-                no_candidates_okay=no_candidates_okay,
-            ):
-                descriptionLength = -prior
-                # Shouldn't see it on this iteration
-                assert descriptionLength <= budget
-                # Should already have seen it
-                assert descriptionLength > previousBudget
+            try:
+                for prior, _, p in g.enumeration(
+                    Context.EMPTY,
+                    [],
+                    request,
+                    maximumDepth=99,
+                    upperBound=budget,
+                    lowerBound=previousBudget,
+                ):
+                    descriptionLength = -prior
+                    # Shouldn't see it on this iteration
+                    assert descriptionLength <= budget
+                    # Should already have seen it
+                    if descriptionLength <= previousBudget:
+                        raise NoCandidates
 
-                numberOfPrograms += 1
-                totalNumberOfPrograms += 1
+                    numberOfPrograms += 1
+                    totalNumberOfPrograms += 1
 
-                for n in range(len(tasks)):
-                    task = tasks[n]
+                    for n in range(len(tasks)):
+                        task = tasks[n]
 
-                    # Warning:changed to max's new likelihood model situation
-                    # likelihood = task.logLikelihood(p, evaluationTimeout)
-                    # if invalid(likelihood):
-                    # continue
-                    success, likelihood = likelihoodModel.score(p, task)
-                    if not success:
-                        continue
+                        success, likelihood = likelihoodModel.score(p, task)
+                        if not success:
+                            continue
 
-                    dt = time() - starting + elapsedTime
-                    priority = -(likelihood + prior)
-                    hits[n].push(
-                        priority,
-                        (
-                            dt,
-                            FrontierEntry(
-                                program=p, logLikelihood=likelihood, logPrior=prior
+                        dt = time() - starting + elapsedTime
+                        priority = -(likelihood + prior)
+                        hits[n].push(
+                            priority,
+                            (
+                                dt,
+                                FrontierEntry(
+                                    program=p, logLikelihood=likelihood, logPrior=prior
+                                ),
                             ),
-                        ),
-                    )
-                    if len(hits[n]) > maximumFrontiers[n]:
-                        hits[n].popMaximum()
+                        )
+                        if len(hits[n]) > maximumFrontiers[n]:
+                            hits[n].popMaximum()
 
-                if timeout is not None and time() - starting > timeout:
-                    raise EnumerationTimeout
+                    if timeout is not None and time() - starting > timeout:
+                        raise EnumerationTimeout
+            except NoCandidates as err:
+                if no_candidates_okay:
+                    no_candidates = True
+                    break
+                else:
+                    raise err
 
             previousBudget = budget
             budget += budgetIncrement
@@ -626,4 +641,4 @@ def enumerateForTasks(
         for n in range(len(tasks))
     }
 
-    return frontiers, searchTimes, totalNumberOfPrograms
+    return frontiers, searchTimes, totalNumberOfPrograms, no_candidates
