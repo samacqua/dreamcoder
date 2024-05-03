@@ -93,6 +93,7 @@ def multicoreEnumeration(
 
     # Map from task to the shortest time to find a program solving it
     bestSearchTime = {t: None for t in task2grammar}
+    shortestSearchTime = {t: None for t in task2grammar}
 
     lowerBounds = {k: 0.0 for k in jobs}
 
@@ -110,13 +111,6 @@ def multicoreEnumeration(
     def budgetIncrement(lb):
         if True:
             return 1.5
-        # Very heuristic - not sure what to do here
-        if lb < 24.0:
-            return 1.0
-        elif lb < 27.0:
-            return 0.5
-        else:
-            return 0.25
 
     def maximumFrontiers(j):
         tasks = jobs[j]
@@ -241,19 +235,21 @@ def multicoreEnumeration(
             activeCPUs -= id2CPUs[message.ID]
             stopwatches[id2job[message.ID]].stop()
 
-            newFrontiers, searchTimes, pc = message.value
+            newFrontiers, searchTimes, total_num_progs = message.value
             for t, f in newFrontiers.items():
                 oldBest = None if len(frontiers[t]) == 0 else frontiers[t].bestPosterior
                 frontiers[t] = frontiers[t].combine(f)
                 newBest = None if len(frontiers[t]) == 0 else frontiers[t].bestPosterior
 
-                taskToNumberOfPrograms[t] += pc
+                taskToNumberOfPrograms[t] += total_num_progs
 
                 dt = searchTimes[t]
                 if dt is not None:
                     if bestSearchTime[t] is None:
                         bestSearchTime[t] = dt
+                        shortestSearchTime[t] = dt
                     else:
+                        shortestSearchTime[t] = min(shortestSearchTime[t], dt)
                         # newBest & oldBest should both be defined
                         assert oldBest is not None
                         assert newBest is not None
@@ -273,7 +269,7 @@ def multicoreEnumeration(
         list(taskToNumberOfPrograms.values()),
     )
 
-    return [frontiers[t] for t in tasks], bestSearchTime
+    return [frontiers[t] for t in tasks], shortestSearchTime
 
 
 def wrapInThread(f):
