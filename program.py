@@ -142,6 +142,15 @@ class Program(object):
             if child.isIndex and child.i >= surroundingAbstractions:
                 yield child.i - surroundingAbstractions
 
+    def get_primitives(self):
+        """Returns the set of primitives in the program."""
+        primitives = set()
+        for _, subprog in self.walk():
+            if isinstance(subprog, Primitive):
+                primitives.add(subprog)
+
+        return primitives
+
     def walk(self):
         raise NotImplementedError
     
