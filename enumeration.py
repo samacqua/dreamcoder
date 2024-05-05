@@ -23,6 +23,7 @@ def multicoreEnumeration(
     maximumFrontier=None,
     verbose=True,
     evaluationTimeout=None,
+    maxProgramsToEnumerate=None,
     maxMDL=None,
     testing=False,
     unigramGrammar=None,
@@ -105,6 +106,7 @@ def multicoreEnumeration(
 
     # Map from task to how many programs we enumerated for that task
     taskToNumberOfPrograms = {t: 0 for t in tasks}
+    jobsToNumberOfPrograms = {j: 0 for j in jobs}
 
     def numberOfHits(f):
         return sum(e.logLikelihood > -0.01 for e in f)
@@ -199,6 +201,7 @@ def multicoreEnumeration(
                     g=g,
                     ID=nextID,
                     elapsedTime=stopwatches[j].elapsed,
+                    maxProgramsToEnumerate=maxProgramsToEnumerate - jobsToNumberOfPrograms[j] if maxProgramsToEnumerate is not None else None,
                     CPUs=allocation[j],
                     tasks=jobs[j],
                     lowerBound=lowerBounds[j],
@@ -240,12 +243,7 @@ def multicoreEnumeration(
 
             newFrontiers, searchTimes, total_num_progs, *should_terminate = message.value
 
-            # If a task should terminate early for any reason, terminate it
-            # by incrementing the stopwatch past the timeout. This helps save
-            # time if it is known that further enumeration will not be useful.
-            should_terminate = should_terminate[0] if should_terminate else False
-            if should_terminate:
-                stopwatches[id2job[message.ID]].increment(enumerationTimeout)
+            jobsToNumberOfPrograms[id2job[message.ID]] += total_num_progs
 
             for t, f in newFrontiers.items():
                 oldBest = None if len(frontiers[t]) == 0 else frontiers[t].bestPosterior
@@ -271,6 +269,14 @@ def multicoreEnumeration(
                             bestSearchTime[t] = dt
                         elif newScore == oldScore:
                             bestSearchTime[t] = min(bestSearchTime[t], dt)
+            
+            # If a task should terminate early for any reason, terminate it
+            # by incrementing the stopwatch past the timeout. This helps save
+            # time if it is known that further enumeration will not be useful.
+            should_terminate = should_terminate[0] if should_terminate else False
+            if should_terminate:
+                stopwatches[id2job[message.ID]].increment(enumerationTimeout)
+
         else:
             eprint("Unknown message result:", message.result)
             assert False
@@ -469,6 +475,7 @@ def solveForTask_pypy(
     timeout=None,
     likelihoodModel=None,
     evaluationTimeout=None,
+    maxProgramsToEnumerate=None,
     maximumFrontiers=None,
     testing=False,
     unigramGrammar=None,
@@ -483,6 +490,7 @@ def solveForTask_pypy(
         timeout=timeout,
         testing=testing,
         elapsedTime=elapsedTime,
+        maxProgramsToEnumerate=maxProgramsToEnumerate,
         evaluationTimeout=evaluationTimeout,
         maximumFrontiers=maximumFrontiers,
         budgetIncrement=budgetIncrement,
@@ -505,6 +513,7 @@ def solveForTask_python(
     CPUs=1,
     likelihoodModel=None,
     evaluationTimeout=None,
+    maxProgramsToEnumerate=None,
     maximumFrontiers=None,
     testing=False,
     no_candidates_okay=False,
@@ -517,6 +526,7 @@ def solveForTask_python(
         timeout=timeout,
         testing=testing,
         elapsedTime=elapsedTime,
+        maxProgramsToEnumerate=maxProgramsToEnumerate,
         evaluationTimeout=evaluationTimeout,
         maximumFrontiers=maximumFrontiers,
         budgetIncrement=budgetIncrement,
@@ -528,6 +538,12 @@ def solveForTask_python(
 
 
 class EnumerationTimeout(Exception):
+    """Raised when we have exceeded the enumeration timeout."""
+    pass
+
+
+class MaxProgramsToEnumerate(Exception):
+    """Raised when we have enumerated the maximum number of programs."""
     pass
 
 
@@ -539,6 +555,7 @@ def enumerateForTasks(
     verbose=False,
     timeout=None,
     elapsedTime=0.0,
+    maxProgramsToEnumerate=None,
     CPUs=1,
     testing=False,  # unused
     evaluationTimeout=None,
@@ -566,15 +583,14 @@ def enumerateForTasks(
     starting = time()
     previousBudget = lowerBound
     budget = lowerBound + budgetIncrement
-    no_candidates = False
+    should_terminate = False
+    total_number_of_programs = 0
     try:
-        totalNumberOfPrograms = 0
         while (
             time() < starting + timeout
             and any(len(h) < mf for h, mf in zip(hits, maximumFrontiers))
             and budget <= upperBound
         ):
-            numberOfPrograms = 0
 
             try:
                 for prior, _, p in g.enumeration(
@@ -592,8 +608,10 @@ def enumerateForTasks(
                     if descriptionLength <= previousBudget:
                         raise NoCandidates
 
-                    numberOfPrograms += 1
-                    totalNumberOfPrograms += 1
+                    if maxProgramsToEnumerate and total_number_of_programs >= maxProgramsToEnumerate:
+                        raise MaxProgramsToEnumerate
+
+                    total_number_of_programs += 1
 
                     for n in range(len(tasks)):
                         task = tasks[n]
@@ -620,10 +638,13 @@ def enumerateForTasks(
                         raise EnumerationTimeout
             except NoCandidates as err:
                 if no_candidates_okay:
-                    no_candidates = True
+                    should_terminate = True
                     break
                 else:
                     raise err
+            except MaxProgramsToEnumerate:
+                should_terminate = True
+                break
 
             previousBudget = budget
             budget += budgetIncrement
@@ -641,4 +662,4 @@ def enumerateForTasks(
         for n in range(len(tasks))
     }
 
-    return frontiers, searchTimes, totalNumberOfPrograms, no_candidates
+    return frontiers, searchTimes, total_number_of_programs, should_terminate
