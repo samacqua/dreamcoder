@@ -340,17 +340,27 @@ class Grammar(object):
         self, context, environment, request, expression, silent=False
     ):
         if request.isArrow():
+
+            # If the request is an arrow, then the expression must be an abstraction.
+            # If instead we have a primitive, wrap it in an abstraction.
+            # Search will never yield this, but LLM inference might.
+            if isinstance(expression, Primitive) and expression.tp.isArrow():
+                eprint(f"Request is an arrow but I got a primitive {expression}")
+                expression = expression.wrap_with_lambda()
+                eprint(f"Wrapped to {expression} to match request {request}")
+
             if not isinstance(expression, Abstraction):
                 if not silent:
-                    eprint("Request is an arrow but I got", expression)
+                    eprint("Request is an arrow but I got", expression, type(expression))
                 return context, None
-            return self.likelihoodSummary(
-                context,
-                [request.arguments[0]] + environment,
-                request.arguments[1],
-                expression.body,
-                silent=silent,
-            )
+            else:
+                return self.likelihoodSummary(
+                    context,
+                    [request.arguments[0]] + environment,
+                    request.arguments[1],
+                    expression.body,
+                    silent=silent,
+                )
         # Build the candidates
         candidates = self.buildCandidates(
             request, context, environment, normalize=False, returnTable=True
