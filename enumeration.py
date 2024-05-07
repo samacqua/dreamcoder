@@ -36,6 +36,10 @@ def multicoreEnumeration(
     Returns (list-of-frontiers, map-from-task-to-search-time)"""
 
     # assert no_candidates_okay
+    if not (maxMDL or enumerationTimeout or maxProgramsToEnumerate):
+        raise ValueError("Must specify a stopping condition.")
+    if not enumerationTimeout:
+        enumerationTimeout = 60 * 60 * 24 * 365  # One year
 
     # We don't use actual threads but instead use the multiprocessing
     # library. This is because we need to be able to kill workers.
@@ -184,7 +188,7 @@ def multicoreEnumeration(
                     continue
                 thisTimeout = enumerationTimeout - stopwatches[j].elapsed
                 eprint(
-                    "(python) Launching %s (%d tasks) w/ %d CPUs. %f <= MDL < %f. Timeout %f."
+                    "(python) Launching %s (%d tasks) w/ %d CPUs. %f <= MDL < %f. Timeout %f. N tasks left: %d. Curren date: %s."
                     % (
                         request,
                         len(jobs[j]),
@@ -192,6 +196,8 @@ def multicoreEnumeration(
                         lowerBounds[j],
                         lowerBounds[j] + bi,
                         thisTimeout,
+                        maxProgramsToEnumerate - jobsToNumberOfPrograms[j] if maxProgramsToEnumerate is not None else -1,
+                        datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     )
                 )
                 stopwatches[j].start()
