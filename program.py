@@ -189,8 +189,13 @@ class Program(object):
         return False
 
     @staticmethod
-    def parse(s, magic_float_typing=False, allow_unknown_primitives=False):
+    def parse(s, magic_float_typing=False, magic_int_typing=True, allow_unknown_primitives=False):
         s = parseSExpression(s)
+
+        def sExpressionToString(e):
+            if isinstance(e, list):
+                return "(" + " ".join([sExpressionToString(x) for x in e]) + ")"
+            return e
 
         def p(e):
             if isinstance(e, list):
@@ -198,7 +203,7 @@ class Program(object):
                     assert len(e) == 2, f"Expected # to have one argument, got {len(e)}"
                     return Invented(p(e[1]))
                 if e[0] == "lambda":
-                    assert len(e) == 2, f"Expected lambda to have one argument, got {len(e)}"
+                    assert len(e) == 2, f"Expected lambda to have one argument, got {len(e)} in expression: {sExpressionToString(e)}"
                     return Abstraction(p(e[1]))
                 f = p(e[0])
                 for x in e[1:]:
@@ -224,6 +229,11 @@ class Program(object):
                     return Primitive.GLOBALS[f"{float_e:g}"]
                 except:
                     pass
+            if magic_int_typing and e.isdigit():
+                int_e = int(e)
+                _ = Primitive(f"{int_e}", tint, int_e, override_globals=True,
+                          function_comment=f"Primitive(\"{int_e}\", tint, {int_e})")
+                return Primitive.GLOBALS[f"{int_e}"]
             if allow_unknown_primitives:
                 if e not in Primitive.UNKNOWN_NAMES:
                     Primitive.UNKNOWN_NAMES[e] = Primitive(e, None, "")
@@ -431,7 +441,14 @@ class Application(Program):
             else:
                 return self.falseBranch.evaluate(environment)
         else:
-            return self.f.evaluate(environment)(self.x.evaluate(environment))
+            f = self.f.evaluate(environment)
+            x = self.x.evaluate(environment)
+            try:
+                return f(x)
+            except Exception as err:
+                raise RunFailure(
+                    f"Could not run {self.f} on arguments {self.x} in environment (err={err})"
+                    f" (evaled f={f}, evaled x={x})")
 
     def inferType(self, context, environment, freeVariables):
         (context, ft) = self.f.inferType(context, environment, freeVariables)
@@ -787,6 +804,18 @@ class Primitive(Program):
         if name in Primitive.GLOBALS:
             return Primitive.GLOBALS[name], n
         raise ParseFailure(s)
+
+    def wrap_with_lambda(self):
+        """Wrap the primitive in a lambda function."""
+        assert self.tp.isArrow()
+        n_args = len(self.tp.functionArguments())
+        if n_args == 0:
+            return Abstraction(self)
+        else:
+            res = Application(self, Index(0))
+            for i in range(1, n_args):
+                res = Application(res, Index(i))
+            return Abstraction(res)
 
     # TODO(@mtensor): needs to be fixed to handle both pickling lambda functions and unpickling in general.
     # def __getstate__(self):
